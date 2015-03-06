@@ -1,98 +1,101 @@
 #include "chipmunk/sse.h"
 #include <xmmintrin.h>
-//#ifdef __SSE__
+#ifdef __SSE__
 
 #define _MM_LOADL_PI(x,y) (_mm_loadl_pi((x), (__m64 const*)(y)))
 #define _MM_LOADH_PI(x,y) (_mm_loadh_pi((x), (__m64 const*)(y)))
 #define _MM_STOREL_PI(x,y) (_mm_storel_pi((__m64*)(x), (y)))
 #define _MM_STOREH_PI(x,y) (_mm_storeh_pi((__m64*)(x), (y)))
-
+#define _MM_GET_LANE(x,y) (((float const*)&x)[y])
 void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 {
 	cpBody *a = arb->body_a;
     cpBody *b = arb->body_b;
     cpFloat friction = arb->u;
-	vect32x2_t n;// = { arb->n.x, arb->n.y, arb->n.x, arb->n.y };
-    n.mm = _MM_LOADL_PI(n.mm, &arb->n);
-    n.mm = _MM_LOADH_PI(n.mm, &arb->n);
+	__m128 n;// = { arb->n.x, arb->n.y, arb->n.x, arb->n.y };
+    n = _MM_LOADL_PI(n, &arb->n);
+    n = _MM_LOADH_PI(n, &arb->n);
 
-	vect32x2_t surface_vr;// = { 0, 0, arb->surface_vr.x, arb->surface_vr.y };
-	surface_vr.mm = _MM_LOADH_PI(_mm_setzero_ps(), &arb->surface_vr);
+	__m128 surface_vr;// = { 0, 0, arb->surface_vr.x, arb->surface_vr.y };
+	surface_vr = _MM_LOADH_PI(_mm_setzero_ps(), &arb->surface_vr);
 
-	vect32x2_t v_bias;// = {a->v_bias.x, a->v_bias.y, b->v_bias.x, b->v_bias.y};
-	v_bias.mm = _MM_LOADL_PI(v_bias.mm, &a->v_bias);
-	v_bias.mm = _MM_LOADH_PI(v_bias.mm, &b->v_bias);
+	__m128 v_bias;// = {a->v_bias.x, a->v_bias.y, b->v_bias.x, b->v_bias.y};
+	v_bias = _MM_LOADL_PI(v_bias, &a->v_bias);
+	v_bias = _MM_LOADH_PI(v_bias, &b->v_bias);
 
-	vect32x2_t w_bias = { a->w_bias, a->w_bias,
-		                  b->w_bias, b->w_bias };
+	__m128 w_bias = _mm_setr_ps( a->w_bias, a->w_bias,
+		                  b->w_bias, b->w_bias );
 
-	vect32x2_t v;// = { a->v.x, a->v.y, b->v.x, b->v.y };
-	v.mm = _MM_LOADL_PI(v.mm, &a->v);
-	v.mm = _MM_LOADH_PI(v.mm, &b->v);
+	__m128 v;// = { a->v.x, a->v.y, b->v.x, b->v.y };
+	v = _MM_LOADL_PI(v, &a->v);
+	v = _MM_LOADH_PI(v, &b->v);
 
-	vect32x2_t w = { a->w, a->w,
-		             b->w, b->w };
+	__m128 w = _mm_setr_ps( a->w, a->w,
+		             b->w, b->w );
 
-	vect32x2_t m_inv = { a->m_inv, a->m_inv,
-		                 b->m_inv, b->m_inv };
+	__m128 m_inv = _mm_setr_ps( a->m_inv, a->m_inv,
+		                 b->m_inv, b->m_inv );
 
-	vect32x2_t i_inv = { a->i_inv, a->i_inv,
-		                 b->i_inv, b->i_inv };
+	__m128 i_inv = _mm_setr_ps( a->i_inv, a->i_inv,
+		                 b->i_inv, b->i_inv );
 
 	for (int i = 0; i < arb->count; i++){
 		struct cpContact *con = &arb->contacts[i];
 
-		vect32x2_t r_perp = { -con->r1.y, con->r1.x,
-			                  -con->r2.y, con->r2.x };
+		__m128 r_perp = _mm_setr_ps( -con->r1.y, con->r1.x,
+			                  -con->r2.y, con->r2.x );
 
-		vect32x2_t rp_mul_wb;
-		rp_mul_wb.mm = _mm_mul_ps(r_perp.mm, w_bias.mm);
+		__m128 rp_mul_wb;
+		rp_mul_wb = _mm_mul_ps(r_perp, w_bias);
 
-		vect32x2_t vb;
-		vb.mm = _mm_add_ps(v_bias.mm, rp_mul_wb.mm);
+		__m128 vb;
+		vb = _mm_add_ps(v_bias, rp_mul_wb);
 
-		vect32x2_t rp_mul_w;
-		rp_mul_w.mm = _mm_mul_ps(r_perp.mm, w.mm);
+		__m128 rp_mul_w;
+		rp_mul_w = _mm_mul_ps(r_perp, w);
 
-		vect32x2_t vr;
-		vr.mm = _mm_add_ps(v.mm, rp_mul_w.mm);
+		__m128 vr;
+		vr = _mm_add_ps(v, rp_mul_w);
 
-		vect32x2_t vb_vr = { vb.vect[1].x - vb.vect[0].x, vb.vect[1].y - vb.vect[0].y,
-			vr.vect[1].x - vr.vect[0].x, vr.vect[1].y - vr.vect[0].y };
+		//__m128 vb_vr = { vb.vect[1].x - vb.vect[0].x, vb.vect[1].y - vb.vect[0].y,vr.vect[1].x - vr.vect[0].x, vr.vect[1].y - vr.vect[0].y );
+
+		__m128 vb_vr = _mm_setr_ps( _MM_GET_LANE(vb, 2) - _MM_GET_LANE(vb, 0), _MM_GET_LANE(vb, 3) - _MM_GET_LANE(vb, 1),
+		                 _MM_GET_LANE(vr, 2) - _MM_GET_LANE(vr, 0), _MM_GET_LANE(vr, 3) - _MM_GET_LANE(vr, 1));
+
 		//add surface_vr to vr
-		vb_vr.mm = _mm_add_ps(vb_vr.mm, surface_vr.mm);
+		vb_vr = _mm_add_ps(vb_vr, surface_vr);
 
 		//vb and vr are vects
-		vect32x2_t vbvr_mul_n;
-		vbvr_mul_n.mm = _mm_mul_ps(vb_vr.mm, n.mm);
+		__m128 vbvr_mul_n;
+		vbvr_mul_n = _mm_mul_ps(vb_vr, n);
 
 		//vbn and vrn are scalars
-		vect32x2_t vbn_vrn = {vbvr_mul_n.vect[0].x + vbvr_mul_n.vect[0].y,
-                              vbvr_mul_n.vect[1].x + vbvr_mul_n.vect[1].y};
+		__m128 vbn_vrn = _mm_setr_ps(_MM_GET_LANE(vbvr_mul_n, 0) + _MM_GET_LANE(vbvr_mul_n, 1),
+		                  _MM_GET_LANE(vbvr_mul_n, 2) + _MM_GET_LANE(vbvr_mul_n, 3),0,0);
 
         //---------------------------------------------------------------------------------
-		vect32x2_t nMass = {con->nMass, con->nMass, con->nMass, con->nMass};
+		__m128 nMass = _mm_set_ps1(con->nMass);
 
-		vect32x2_t bias_bounce = { con->bias, -con->bounce};
+		__m128 bias_bounce = _mm_setr_ps( con->bias, -con->bounce,0,0);
 
         //vect[0] only. jbn and jn are scalars
-        vect32x2_t jbn_jn;
-        jbn_jn.mm = _mm_mul_ps(_mm_sub_ps(bias_bounce.mm, vbn_vrn.mm), nMass.mm);
+        __m128 jbn_jn;
+        jbn_jn = _mm_mul_ps(_mm_sub_ps(bias_bounce, vbn_vrn), nMass);
 
-		vect32x2_t jbnOld_jnOld = { con->jBias, con->jnAcc};
+		__m128 jbnOld_jnOld = _mm_setr_ps( con->jBias, con->jnAcc,0,0);
 
-        jbn_jn.mm = _mm_max_ps(_mm_add_ps(jbn_jn.mm, jbnOld_jnOld.mm), _mm_setzero_ps());
+        jbn_jn = _mm_max_ps(_mm_add_ps(jbn_jn, jbnOld_jnOld), _mm_setzero_ps());
         //apply to con
-        con->jBias = jbn_jn.arr[0];
-        con->jnAcc = jbn_jn.arr[1];
+        con->jBias = _MM_GET_LANE(jbn_jn,0);//jbn_jn.arr[0];
+        con->jnAcc = _MM_GET_LANE(jbn_jn,1);//jbn_jn.arr[1];
 
         //vect[0] only
-        vect32x2_t jApply;
-        jApply.mm = _mm_sub_ps(jbn_jn.mm, jbnOld_jnOld.mm);
+        __m128 jApply;
+        jApply = _mm_sub_ps(jbn_jn, jbnOld_jnOld);
 
         //------------------------------------------------------------------------------------
         //vrt is scalar
-        float vrt = -vb_vr.vect[1].x*n.vect[0].y + vb_vr.vect[1].y*n.vect[0].x;
+        float vrt = -_MM_GET_LANE(vb_vr,2)*_MM_GET_LANE(n,1) + _MM_GET_LANE(vb_vr,3)*_MM_GET_LANE(n,0);
         float jtMax = friction*con->jnAcc;
         float jt = -vrt*con->tMass;
         float jtOld = con->jtAcc;
@@ -100,46 +103,46 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 
         //------------------------------------------------------------------------------------
         //j==>{vect[0]:-j,vect[1]:j}
-        vect32x2_t j;
-        j.mm = _mm_mul_ps(n.mm, _mm_setr_ps(-jApply.arr[0], -jApply.arr[0],
-                                            jApply.arr[0], jApply.arr[0]));
+        __m128 j;
+        j = _mm_mul_ps(n, _mm_setr_ps(-_MM_GET_LANE(jApply,0), -_MM_GET_LANE(jApply,0),
+                                      _MM_GET_LANE(jApply,0), _MM_GET_LANE(jApply,0)));
 
-        v_bias.mm = _mm_add_ps(v_bias.mm, _mm_mul_ps(j.mm, m_inv.mm));
+        v_bias = _mm_add_ps(v_bias, _mm_mul_ps(j, m_inv));
 
-        vect32x2_t rp_mul_j;
-        rp_mul_j.mm = _mm_mul_ps(r_perp.mm, j.mm);
+        __m128 rp_mul_j;
+        rp_mul_j = _mm_mul_ps(r_perp, j);
 
-		vect32x2_t r_cross_j = { rp_mul_j.arr[0] + rp_mul_j.arr[1], rp_mul_j.arr[0] + rp_mul_j.arr[1],
-			                     rp_mul_j.arr[2] + rp_mul_j.arr[3], rp_mul_j.arr[2] + rp_mul_j.arr[3] };
+		__m128 r_cross_j = _mm_setr_ps( _MM_GET_LANE(rp_mul_j,0) + _MM_GET_LANE(rp_mul_j,1), _MM_GET_LANE(rp_mul_j,0) + _MM_GET_LANE(rp_mul_j,1),
+                             _MM_GET_LANE(rp_mul_j,2) + _MM_GET_LANE(rp_mul_j,3), _MM_GET_LANE(rp_mul_j,2) + _MM_GET_LANE(rp_mul_j,3) );
 
-        w_bias.mm = _mm_add_ps(w_bias.mm, _mm_mul_ps(i_inv.mm, r_cross_j.mm));
+        w_bias = _mm_add_ps(w_bias, _mm_mul_ps(i_inv, r_cross_j));
 
-		vect32x2_t rot_para = { jApply.arr[1], con->jtAcc - jtOld,
-			                    con->jtAcc - jtOld, jApply.arr[1] };
+		__m128 rot_para = _mm_setr_ps( _MM_GET_LANE(jApply,1), con->jtAcc - jtOld,
+                            con->jtAcc - jtOld, _MM_GET_LANE(jApply,1) );
 
-        vect32x2_t n_mul_para;
-        n_mul_para.mm = _mm_mul_ps(n.mm, rot_para.mm);
+        __m128 n_mul_para;
+        n_mul_para = _mm_mul_ps(n, rot_para);
 
-		vect32x2_t k = { -(n_mul_para.arr[0] - n_mul_para.arr[1]), -(n_mul_para.arr[2] + n_mul_para.arr[3]),
-			             n_mul_para.arr[0] - n_mul_para.arr[1], n_mul_para.arr[2] + n_mul_para.arr[3] };
+		__m128 k = _mm_setr_ps( -(_MM_GET_LANE(n_mul_para,0) - _MM_GET_LANE(n_mul_para,1)), -(_MM_GET_LANE(n_mul_para,2) + _MM_GET_LANE(n_mul_para,3)),
+                     _MM_GET_LANE(n_mul_para,0) - _MM_GET_LANE(n_mul_para,1), _MM_GET_LANE(n_mul_para,2) + _MM_GET_LANE(n_mul_para,3) );
 
-        v.mm = _mm_add_ps(v.mm, _mm_mul_ps(k.mm, m_inv.mm));
+        v = _mm_add_ps(v, _mm_mul_ps(k, m_inv));
 
-        vect32x2_t rp_mul_k;
-        rp_mul_k.mm = _mm_mul_ps(r_perp.mm, k.mm);
+        __m128 rp_mul_k;
+        rp_mul_k = _mm_mul_ps(r_perp, k);
 
-		vect32x2_t r_cross_k = { rp_mul_k.arr[0] + rp_mul_k.arr[1], rp_mul_k.arr[0] + rp_mul_k.arr[1],
-			                     rp_mul_k.arr[2] + rp_mul_k.arr[3], rp_mul_k.arr[2] + rp_mul_k.arr[3] };
+		__m128 r_cross_k = _mm_setr_ps( _MM_GET_LANE(rp_mul_k,0) + _MM_GET_LANE(rp_mul_k,1), _MM_GET_LANE(rp_mul_k,0) + _MM_GET_LANE(rp_mul_k,1),
+			                     _MM_GET_LANE(rp_mul_k,2) + _MM_GET_LANE(rp_mul_k,3), _MM_GET_LANE(rp_mul_k,2) + _MM_GET_LANE(rp_mul_k,3) );
 
-        w.mm = _mm_add_ps(w.mm, _mm_mul_ps(i_inv.mm, r_cross_k.mm));
+        w = _mm_add_ps(w, _mm_mul_ps(i_inv, r_cross_k));
     }
-    _MM_STOREL_PI(&a->v_bias, v_bias.mm);//a->v_bias = v_bias.vect[0];
-    _MM_STOREH_PI(&b->v_bias, v_bias.mm);//b->v_bias = v_bias.vect[1];
-    a->w_bias = w_bias.arr[0];
-    b->w_bias = w_bias.arr[2];
-    _MM_STOREL_PI(&a->v, v.mm);//a->v = v.vect[0];
-    _MM_STOREH_PI(&b->v, v.mm);//b->v = v.vect[1];
-    a->w = w.arr[0];
-    b->w = w.arr[2];
+    _MM_STOREL_PI(&a->v_bias, v_bias);//a->v_bias = v_bias.vect[0];
+    _MM_STOREH_PI(&b->v_bias, v_bias);//b->v_bias = v_bias.vect[1];
+    a->w_bias = _MM_GET_LANE(w_bias,0);
+    b->w_bias = _MM_GET_LANE(w_bias,2);
+    _MM_STOREL_PI(&a->v, v);//a->v = v.vect[0];
+    _MM_STOREH_PI(&b->v, v);//b->v = v.vect[1];
+    a->w = _MM_GET_LANE(w,0);
+    b->w = _MM_GET_LANE(w,2);
 }
-//#endif
+#endif

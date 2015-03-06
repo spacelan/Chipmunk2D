@@ -15,7 +15,7 @@ typedef union {
 	cpFloat a[4];
 }float32x4_t;
 
-typedef union{
+typedef union __attribute__((aligned(16))) vect32x2_t{
 	cpVect vect[2];
 	__m128 mm;
 	cpFloat arr[4];
