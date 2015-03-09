@@ -39,55 +39,50 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 	__m128 i_inv = _mm_setr_ps( a->i_inv, a->i_inv,
 		                 b->i_inv, b->i_inv );
 
+    __m128 perp = _mm_setr_ps(-1, 1, -1, 1);
+
 	for (int i = 0; i < arb->count; i++){
 		struct cpContact *con = &arb->contacts[i];
 
-		__m128 r_perp = _mm_setr_ps( -con->r1.y, con->r1.x,
-			                  -con->r2.y, con->r2.x );
+		__m128 r;
+		r = _MM_LOADL_PI(r,&con->r1);
+		r = _MM_LOADH_PI(r,&con->r2);
 
-		__m128 rp_mul_wb;
-		rp_mul_wb = _mm_mul_ps(r_perp, w_bias);
+		__m128 r_perp = _mm_mul_ps(_mm_shuffle_ps(r,r,_MM_SHUFFLE(2, 3, 0, 1)), perp);
 
-		__m128 vb;
-		vb = _mm_add_ps(v_bias, rp_mul_wb);
+		__m128 vb = _mm_add_ps(v_bias, _mm_mul_ps(r_perp, w_bias));
 
-		__m128 rp_mul_w;
-		rp_mul_w = _mm_mul_ps(r_perp, w);
+		__m128 vr = _mm_add_ps(v, _mm_mul_ps(r_perp, w));
 
-		__m128 vr;
-		vr = _mm_add_ps(v, rp_mul_w);
+		__m128 vb_vr_a = _mm_movelh_ps(vb, vr);
 
-		//__m128 vb_vr = { vb.vect[1].x - vb.vect[0].x, vb.vect[1].y - vb.vect[0].y,vr.vect[1].x - vr.vect[0].x, vr.vect[1].y - vr.vect[0].y );
+		__m128 vb_vr_b = _mm_movehl_ps(vr, vb);
 
-		__m128 vb_vr = _mm_setr_ps( _MM_GET_LANE(vb, 2) - _MM_GET_LANE(vb, 0), _MM_GET_LANE(vb, 3) - _MM_GET_LANE(vb, 1),
-		                 _MM_GET_LANE(vr, 2) - _MM_GET_LANE(vr, 0), _MM_GET_LANE(vr, 3) - _MM_GET_LANE(vr, 1));
+		__m128 vb_vr = _mm_sub_ps(vb_vr_b, vb_vr_a);
 
 		//add surface_vr to vr
 		vb_vr = _mm_add_ps(vb_vr, surface_vr);
 
 		//vb and vr are vects
-		__m128 vbvr_mul_n;
-		vbvr_mul_n = _mm_mul_ps(vb_vr, n);
+		__m128 vbvr_mul_n = _mm_mul_ps(vb_vr, n);
 
-		//vbn and vrn are scalars
-		__m128 vbn_vrn = _mm_setr_ps(_MM_GET_LANE(vbvr_mul_n, 0) + _MM_GET_LANE(vbvr_mul_n, 1),
-		                  _MM_GET_LANE(vbvr_mul_n, 2) + _MM_GET_LANE(vbvr_mul_n, 3),0,0);
+		__m128 vbn_vrn = _mm_add_ps(vbvr_mul_n, _mm_shuffle_ps(vbvr_mul_n, vbvr_mul_n, _MM_SHUFFLE(2, 3, 0, 1)));
 
         //---------------------------------------------------------------------------------
 		__m128 nMass = _mm_set_ps1(con->nMass);
 
-		__m128 bias_bounce = _mm_setr_ps( con->bias, -con->bounce,0,0);
+		__m128 bias_bounce = _mm_setr_ps( con->bias, con->bias, -con->bounce, -con->bounce);
 
         //vect[0] only. jbn and jn are scalars
         __m128 jbn_jn;
         jbn_jn = _mm_mul_ps(_mm_sub_ps(bias_bounce, vbn_vrn), nMass);
 
-		__m128 jbnOld_jnOld = _mm_setr_ps( con->jBias, con->jnAcc,0,0);
+		__m128 jbnOld_jnOld = _mm_setr_ps( con->jBias, con->jBias, con->jnAcc, con->jnAcc);
 
         jbn_jn = _mm_max_ps(_mm_add_ps(jbn_jn, jbnOld_jnOld), _mm_setzero_ps());
         //apply to con
         con->jBias = _MM_GET_LANE(jbn_jn,0);//jbn_jn.arr[0];
-        con->jnAcc = _MM_GET_LANE(jbn_jn,1);//jbn_jn.arr[1];
+        con->jnAcc = _MM_GET_LANE(jbn_jn,2);//jbn_jn.arr[1];
 
         //vect[0] only
         __m128 jApply;
@@ -103,36 +98,32 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 
         //------------------------------------------------------------------------------------
         //j==>{vect[0]:-j,vect[1]:j}
-        __m128 j;
-        j = _mm_mul_ps(n, _mm_setr_ps(-_MM_GET_LANE(jApply,0), -_MM_GET_LANE(jApply,0),
-                                      _MM_GET_LANE(jApply,0), _MM_GET_LANE(jApply,0)));
+        __m128 j = _mm_mul_ps(n, _mm_mul_ps(_mm_movelh_ps(jApply,jApply),_mm_shuffle_ps(perp,perp,_MM_SHUFFLE(3, 1, 2, 0))));
 
         v_bias = _mm_add_ps(v_bias, _mm_mul_ps(j, m_inv));
 
-        __m128 rp_mul_j;
-        rp_mul_j = _mm_mul_ps(r_perp, j);
+        __m128 rp_mul_j = _mm_mul_ps(r_perp, j);
 
-		__m128 r_cross_j = _mm_setr_ps( _MM_GET_LANE(rp_mul_j,0) + _MM_GET_LANE(rp_mul_j,1), _MM_GET_LANE(rp_mul_j,0) + _MM_GET_LANE(rp_mul_j,1),
-                             _MM_GET_LANE(rp_mul_j,2) + _MM_GET_LANE(rp_mul_j,3), _MM_GET_LANE(rp_mul_j,2) + _MM_GET_LANE(rp_mul_j,3) );
+        __m128 r_cross_j = _mm_add_ps(rp_mul_j, _mm_shuffle_ps(rp_mul_j, rp_mul_j, _MM_SHUFFLE(2, 3, 0, 1)));
 
         w_bias = _mm_add_ps(w_bias, _mm_mul_ps(i_inv, r_cross_j));
+        //------------------------------------------------------------------------------------
+		__m128 rot_para = _mm_setr_ps( _MM_GET_LANE(jApply,2), -(con->jtAcc - jtOld),
+                            con->jtAcc - jtOld, _MM_GET_LANE(jApply,2) );
 
-		__m128 rot_para = _mm_setr_ps( _MM_GET_LANE(jApply,1), con->jtAcc - jtOld,
-                            con->jtAcc - jtOld, _MM_GET_LANE(jApply,1) );
+        __m128 n_mul_para = _mm_mul_ps(n, rot_para);
 
-        __m128 n_mul_para;
-        n_mul_para = _mm_mul_ps(n, rot_para);
+        __m128 k = _mm_add_ps(n_mul_para, _mm_shuffle_ps(n_mul_para, n_mul_para, _MM_SHUFFLE(2, 3, 0, 1)));
 
-		__m128 k = _mm_setr_ps( -(_MM_GET_LANE(n_mul_para,0) - _MM_GET_LANE(n_mul_para,1)), -(_MM_GET_LANE(n_mul_para,2) + _MM_GET_LANE(n_mul_para,3)),
-                     _MM_GET_LANE(n_mul_para,0) - _MM_GET_LANE(n_mul_para,1), _MM_GET_LANE(n_mul_para,2) + _MM_GET_LANE(n_mul_para,3) );
+        k = _mm_mul_ps(k, perp);
+
+        k = _mm_shuffle_ps(k, k, _MM_SHUFFLE(3, 1, 2, 0));
 
         v = _mm_add_ps(v, _mm_mul_ps(k, m_inv));
 
-        __m128 rp_mul_k;
-        rp_mul_k = _mm_mul_ps(r_perp, k);
+        __m128 rp_mul_k = _mm_mul_ps(r_perp, k);
 
-		__m128 r_cross_k = _mm_setr_ps( _MM_GET_LANE(rp_mul_k,0) + _MM_GET_LANE(rp_mul_k,1), _MM_GET_LANE(rp_mul_k,0) + _MM_GET_LANE(rp_mul_k,1),
-			                     _MM_GET_LANE(rp_mul_k,2) + _MM_GET_LANE(rp_mul_k,3), _MM_GET_LANE(rp_mul_k,2) + _MM_GET_LANE(rp_mul_k,3) );
+        __m128 r_cross_k = _mm_add_ps(rp_mul_k, _mm_shuffle_ps(rp_mul_k, rp_mul_k, _MM_SHUFFLE(2, 3, 0, 1)));
 
         w = _mm_add_ps(w, _mm_mul_ps(i_inv, r_cross_k));
     }
