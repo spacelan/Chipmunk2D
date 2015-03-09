@@ -6,7 +6,7 @@
 #define _MM_LOADH_PI(x,y) (_mm_loadh_pi((x), (__m64 const*)(y)))
 #define _MM_STOREL_PI(x,y) (_mm_storel_pi((__m64*)(x), (y)))
 #define _MM_STOREH_PI(x,y) (_mm_storeh_pi((__m64*)(x), (y)))
-#define _MM_GET_LANE(x,y) (((float const*)&x)[y])
+#define _MM_GET_LANE(x,y) (_mm_cvtss_f32(_mm_shuffle_ps(x,x,y)))
 void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 {
 	cpBody *a = arb->body_a;
@@ -14,7 +14,7 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
     cpFloat friction = arb->u;
 	__m128 n;// = { arb->n.x, arb->n.y, arb->n.x, arb->n.y };
     n = _MM_LOADL_PI(n, &arb->n);
-    n = _MM_LOADH_PI(n, &arb->n);
+	n = _mm_movelh_ps(n, n);
 
 	__m128 surface_vr;// = { 0, 0, arb->surface_vr.x, arb->surface_vr.y };
 	surface_vr = _MM_LOADH_PI(_mm_setzero_ps(), &arb->surface_vr);
@@ -39,10 +39,12 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 	__m128 i_inv = _mm_setr_ps( a->i_inv, a->i_inv,
 		                 b->i_inv, b->i_inv );
 
-    __m128 perp = _mm_setr_ps(-1, 1, -1, 1);
+    static __m128 perp = _mm_setr_ps(-1, 1, -1, 1);
 
-	for (int i = 0; i < arb->count; i++){
-		struct cpContact *con = &arb->contacts[i];
+	int i = arb->count;
+	struct cpContact *con = arb->contacts + i;
+	while(i--){
+		*con--;
 
 		__m128 r;
 		r = _MM_LOADL_PI(r,&con->r1);
@@ -80,19 +82,22 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 		__m128 jbnOld_jnOld = _mm_setr_ps( con->jBias, con->jBias, con->jnAcc, con->jnAcc);
 
         jbn_jn = _mm_max_ps(_mm_add_ps(jbn_jn, jbnOld_jnOld), _mm_setzero_ps());
-        //apply to con
-        con->jBias = _MM_GET_LANE(jbn_jn,0);//jbn_jn.arr[0];
-        con->jnAcc = _MM_GET_LANE(jbn_jn,2);//jbn_jn.arr[1];
 
         //vect[0] only
         __m128 jApply;
         jApply = _mm_sub_ps(jbn_jn, jbnOld_jnOld);
 
+        //apply to con
+        con->jBias = _MM_GET_LANE(jbn_jn,0);//jbn_jn.arr[0];
+        con->jnAcc = _MM_GET_LANE(jbn_jn,2);//jbn_jn.arr[1];
+
         //------------------------------------------------------------------------------------
         //vrt is scalar
-        float vrt = -_MM_GET_LANE(vb_vr,2)*_MM_GET_LANE(n,1) + _MM_GET_LANE(vb_vr,3)*_MM_GET_LANE(n,0);
+		__m128 _vrt = _mm_mul_ps(n, _mm_shuffle_ps(vb_vr, vb_vr, _MM_SHUFFLE(3, 2, 2, 3)));
+		_vrt = _mm_sub_ss(_mm_shuffle_ps(_vrt, _vrt, _MM_SHUFFLE(3, 2, 0, 1)), _vrt);
+		float vrt = _mm_cvtss_f32(_vrt);
         float jtMax = friction*con->jnAcc;
-        float jt = -vrt*con->tMass;
+        float jt = vrt*con->tMass;
         float jtOld = con->jtAcc;
         con->jtAcc = cpfclamp(jtOld+jt, -jtMax, jtMax);
 
