@@ -48,16 +48,14 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 */
     __m128 i_inv = _mm_movelh_ps(_mm_set_ps1(a->i_inv), _mm_set_ps1(b->i_inv));
 
-    static __m128 perp = _mm_setr_ps(-1, 1, -1, 1);
+    static __m128 perp = {-1, 1, -1, 1};
 
     int i = arb->count;
-	struct cpContact *con = arb->contacts + i;
+	struct cpContact *con = arb->contacts;
 	while(i--){
-		*con--;
-
-		__m128 r;
-		r = _MM_LOADL_PI(r,&con->r1);
-		r = _MM_LOADH_PI(r,&con->r2);
+		__m128 r = _mm_load_ps(&(con->r1));
+		//r = _MM_LOADL_PI(r,&con->r1);
+		//r = _MM_LOADH_PI(r,&con->r2);
 
 		__m128 r_perp = _mm_mul_ps(_mm_shuffle_ps(r,r,_MM_SHUFFLE(2, 3, 0, 1)), perp);
 
@@ -82,13 +80,20 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
         //---------------------------------------------------------------------------------
 		__m128 nMass = _mm_set_ps1(con->nMass);
 
-		__m128 bias_bounce = _mm_movelh_ps(_mm_set_ps1(con->bias), _mm_set_ps1(-con->bounce));
+		//__m128 bias_bounce = _mm_movelh_ps(_mm_set_ps1(con->bias), _mm_set_ps1(-con->bounce));
+		__m128 bias_bounce;
+		bias_bounce = _MM_LOADL_PI(bias_bounce, &(con->bias));
+		bias_bounce = _mm_unpacklo_ps(bias_bounce, bias_bounce);
+		bias_bounce = _mm_mul_ps(bias_bounce, _mm_shuffle_ps(perp, perp, _MM_SHUFFLE(0, 2, 1, 3)));
 
         //vect[0] only. jbn and jn are scalars
         __m128 jbn_jn;
         jbn_jn = _mm_mul_ps(_mm_sub_ps(bias_bounce, vbn_vrn), nMass);
 
-		__m128 jbnOld_jnOld = _mm_movelh_ps(_mm_set_ps1(con->jBias), _mm_set_ps1(con->jnAcc));
+		//__m128 jbnOld_jnOld = _mm_movelh_ps(_mm_set_ps1(con->jBias), _mm_set_ps1(con->jnAcc));
+		__m128 jbnOld_jnOld;
+		jbnOld_jnOld = _MM_LOADL_PI(jbnOld_jnOld, &(con->jBias));
+		jbnOld_jnOld = _mm_unpacklo_ps(jbnOld_jnOld, jbnOld_jnOld);
 
         jbn_jn = _mm_max_ps(_mm_add_ps(jbn_jn, jbnOld_jnOld), _mm_setzero_ps());
 
@@ -97,8 +102,9 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
         jApply = _mm_sub_ps(jbn_jn, jbnOld_jnOld);
 
         //apply to con
-        con->jBias = _MM_GET_LANE(jbn_jn,0);//jbn_jn.arr[0];
-        con->jnAcc = _MM_GET_LANE(jbn_jn,2);//jbn_jn.arr[1];
+        //con->jBias = _MM_GET_LANE(jbn_jn,0);//jbn_jn.arr[0];
+        //con->jnAcc = _MM_GET_LANE(jbn_jn,2);//jbn_jn.arr[1];
+        _MM_STOREL_PI(&(con->jBias), _mm_shuffle_ps(jbn_jn, jbn_jn, _MM_SHUFFLE(3, 2, 2, 0)));
 
         //------------------------------------------------------------------------------------
         //vrt is scalar
@@ -140,6 +146,7 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
         __m128 r_cross_k = _mm_add_ps(rp_mul_k, _mm_shuffle_ps(rp_mul_k, rp_mul_k, _MM_SHUFFLE(2, 3, 0, 1)));
 
         w = _mm_add_ps(w, _mm_mul_ps(i_inv, r_cross_k));
+        con++;
     }
     _MM_STOREL_PI(&a->v_bias, v_bias);//a->v_bias = v_bias.vect[0];
     _MM_STOREH_PI(&b->v_bias, v_bias);//b->v_bias = v_bias.vect[1];
