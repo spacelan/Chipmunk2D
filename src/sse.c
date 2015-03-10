@@ -15,7 +15,7 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
     cpFloat friction = arb->u;
 	__m128 n;// = { arb->n.x, arb->n.y, arb->n.x, arb->n.y };
     n = _MM_LOADL_PI(n, &arb->n);
-    n = _MM_LOADH_PI(n, &arb->n);
+	n = _mm_movelh_ps(n, n);
 
 	__m128 surface_vr;// = { 0, 0, arb->surface_vr.x, arb->surface_vr.y };
 	surface_vr = _MM_LOADH_PI(_mm_setzero_ps(), &arb->surface_vr);
@@ -48,12 +48,12 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 */
     __m128 i_inv = _mm_movelh_ps(_mm_set_ps1(a->i_inv), _mm_set_ps1(b->i_inv));
 
-    __m128 perp = _mm_setr_ps(-1, 1, -1, 1);
+    static __m128 perp = _mm_setr_ps(-1, 1, -1, 1);
 
     int i = arb->count;
-	while(i){
-        i--;
-		struct cpContact *con = &arb->contacts[i];
+	struct cpContact *con = arb->contacts + i;
+	while(i--){
+		*con--;
 
 		__m128 r;
 		r = _MM_LOADL_PI(r,&con->r1);
@@ -102,9 +102,11 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 
         //------------------------------------------------------------------------------------
         //vrt is scalar
-        float vrt = -_MM_GET_LANE(vb_vr,2)*_MM_GET_LANE(n,1) + _MM_GET_LANE(vb_vr,3)*_MM_GET_LANE(n,0);
+		__m128 _vrt = _mm_mul_ps(n, _mm_shuffle_ps(vb_vr, vb_vr, _MM_SHUFFLE(3, 2, 2, 3)));
+		_vrt = _mm_sub_ss(_mm_shuffle_ps(_vrt, _vrt, _MM_SHUFFLE(3, 2, 0, 1)), _vrt);
+		float vrt = _mm_cvtss_f32(_vrt);
         float jtMax = friction*con->jnAcc;
-        float jt = -vrt*con->tMass;
+        float jt = vrt*con->tMass;
         float jtOld = con->jtAcc;
         con->jtAcc = cpfclamp(jtOld+jt, -jtMax, jtMax);
 
