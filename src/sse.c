@@ -1,12 +1,13 @@
 #include "chipmunk/sse.h"
 #include <xmmintrin.h>
+#define __SSE__
 #ifdef __SSE__
 
 #define _MM_LOADL_PI(x,y) (_mm_loadl_pi((x), (__m64 const*)(y)))
 #define _MM_LOADH_PI(x,y) (_mm_loadh_pi((x), (__m64 const*)(y)))
 #define _MM_STOREL_PI(x,y) (_mm_storel_pi((__m64*)(x), (y)))
 #define _MM_STOREH_PI(x,y) (_mm_storeh_pi((__m64*)(x), (y)))
-#define _MM_GET_LANE(x,y) (((float const*)&x)[y])
+#define _MM_GET_LANE(x,y) (_mm_cvtss_f32(_mm_shuffle_ps(x,x,y)))
 void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 {
 	cpBody *a = arb->body_a;
@@ -22,26 +23,36 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 	__m128 v_bias;// = {a->v_bias.x, a->v_bias.y, b->v_bias.x, b->v_bias.y};
 	v_bias = _MM_LOADL_PI(v_bias, &a->v_bias);
 	v_bias = _MM_LOADH_PI(v_bias, &b->v_bias);
-
+/*
 	__m128 w_bias = _mm_setr_ps( a->w_bias, a->w_bias,
 		                  b->w_bias, b->w_bias );
+*/
+    __m128 w_bias = _mm_movelh_ps(_mm_set_ps1(a->w_bias), _mm_set_ps1(b->w_bias));
 
 	__m128 v;// = { a->v.x, a->v.y, b->v.x, b->v.y };
 	v = _MM_LOADL_PI(v, &a->v);
 	v = _MM_LOADH_PI(v, &b->v);
-
+/*
 	__m128 w = _mm_setr_ps( a->w, a->w,
 		             b->w, b->w );
-
+*/
+    __m128 w = _mm_movelh_ps(_mm_set_ps1(a->w), _mm_set_ps1(b->w));
+/*
 	__m128 m_inv = _mm_setr_ps( a->m_inv, a->m_inv,
 		                 b->m_inv, b->m_inv );
-
+*/
+    __m128 m_inv = _mm_movelh_ps(_mm_set_ps1(a->m_inv), _mm_set_ps1(b->m_inv));
+/*
 	__m128 i_inv = _mm_setr_ps( a->i_inv, a->i_inv,
 		                 b->i_inv, b->i_inv );
+*/
+    __m128 i_inv = _mm_movelh_ps(_mm_set_ps1(a->i_inv), _mm_set_ps1(b->i_inv));
 
     __m128 perp = _mm_setr_ps(-1, 1, -1, 1);
 
-	for (int i = 0; i < arb->count; i++){
+    int i = arb->count;
+	while(i){
+        i--;
 		struct cpContact *con = &arb->contacts[i];
 
 		__m128 r;
@@ -71,22 +82,23 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
         //---------------------------------------------------------------------------------
 		__m128 nMass = _mm_set_ps1(con->nMass);
 
-		__m128 bias_bounce = _mm_setr_ps( con->bias, con->bias, -con->bounce, -con->bounce);
+		__m128 bias_bounce = _mm_movelh_ps(_mm_set_ps1(con->bias), _mm_set_ps1(-con->bounce));
 
         //vect[0] only. jbn and jn are scalars
         __m128 jbn_jn;
         jbn_jn = _mm_mul_ps(_mm_sub_ps(bias_bounce, vbn_vrn), nMass);
 
-		__m128 jbnOld_jnOld = _mm_setr_ps( con->jBias, con->jBias, con->jnAcc, con->jnAcc);
+		__m128 jbnOld_jnOld = _mm_movelh_ps(_mm_set_ps1(con->jBias), _mm_set_ps1(con->jnAcc));
 
         jbn_jn = _mm_max_ps(_mm_add_ps(jbn_jn, jbnOld_jnOld), _mm_setzero_ps());
-        //apply to con
-        con->jBias = _MM_GET_LANE(jbn_jn,0);//jbn_jn.arr[0];
-        con->jnAcc = _MM_GET_LANE(jbn_jn,2);//jbn_jn.arr[1];
 
         //vect[0] only
         __m128 jApply;
         jApply = _mm_sub_ps(jbn_jn, jbnOld_jnOld);
+
+        //apply to con
+        con->jBias = _MM_GET_LANE(jbn_jn,0);//jbn_jn.arr[0];
+        con->jnAcc = _MM_GET_LANE(jbn_jn,2);//jbn_jn.arr[1];
 
         //------------------------------------------------------------------------------------
         //vrt is scalar
