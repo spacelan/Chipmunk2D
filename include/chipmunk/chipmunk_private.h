@@ -82,13 +82,17 @@ struct cpBody {
 	cpBodyVelocityFunc velocity_func;
 	cpBodyPositionFunc position_func;
 
+
+	__attribute__((aligned(16))) cpFloat m_inv;
+	__attribute__((aligned(4))) cpFloat i_inv;
+	__attribute__((aligned(4))) cpFloat w;
+	__attribute__((aligned(4))) cpFloat w_bias;
+
 	// mass and it's inverse
 	cpFloat m;
-	cpFloat m_inv;
 
 	// moment of inertia and it's inverse
 	cpFloat i;
-	cpFloat i_inv;
 
 	// center of gravity
 	cpVect cog;
@@ -100,7 +104,6 @@ struct cpBody {
 
 	// Angle, angular velocity, torque (radians)
 	cpFloat a;
-	cpFloat w;
 	cpFloat t;
 
 	cpTransform transform;
@@ -110,7 +113,6 @@ struct cpBody {
 	// "pseudo-velocities" used for eliminating overlap.
 	// Erin Catto has some papers that talk about what these are.
 	cpVect v_bias;
-	cpFloat w_bias;
 
 	cpSpace *space;
 
@@ -160,13 +162,14 @@ struct cpArbiterThread {
 };
 
 struct __attribute__((aligned(16))) cpContact {
-	cpVect r1, r2;
+	__attribute__((aligned(16))) cpVect r1;
+	__attribute__((aligned(4))) cpVect r2;
 
-	cpFloat bias, bounce; // TODO: look for an alternate bounce solution.
+	__attribute__((aligned(4))) cpFloat bias, bounce; // TODO: look for an alternate bounce solution.
 
-	cpFloat nMass, tMass;
+	__attribute__((aligned(4))) cpFloat nMass, tMass;
 
-	cpFloat jBias, jnAcc, jtAcc;
+	__attribute__((aligned(4))) cpFloat jBias, jnAcc, jtAcc;
 
 	cpHashValue hash;
 };

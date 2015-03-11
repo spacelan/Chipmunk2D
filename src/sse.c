@@ -23,37 +23,42 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 	__m128 v_bias;// = {a->v_bias.x, a->v_bias.y, b->v_bias.x, b->v_bias.y};
 	v_bias = _MM_LOADL_PI(v_bias, &a->v_bias);
 	v_bias = _MM_LOADH_PI(v_bias, &b->v_bias);
-/*
-	__m128 w_bias = _mm_setr_ps( a->w_bias, a->w_bias,
-		                  b->w_bias, b->w_bias );
-*/
-    __m128 w_bias = _mm_movelh_ps(_mm_set_ps1(a->w_bias), _mm_set_ps1(b->w_bias));
+
+//    __m128 w_bias = _mm_movelh_ps(_mm_set_ps1(a->w_bias), _mm_set_ps1(b->w_bias));
 
 	__m128 v;// = { a->v.x, a->v.y, b->v.x, b->v.y };
 	v = _MM_LOADL_PI(v, &a->v);
 	v = _MM_LOADH_PI(v, &b->v);
 /*
-	__m128 w = _mm_setr_ps( a->w, a->w,
-		             b->w, b->w );
-*/
     __m128 w = _mm_movelh_ps(_mm_set_ps1(a->w), _mm_set_ps1(b->w));
-/*
-	__m128 m_inv = _mm_setr_ps( a->m_inv, a->m_inv,
-		                 b->m_inv, b->m_inv );
-*/
+
     __m128 m_inv = _mm_movelh_ps(_mm_set_ps1(a->m_inv), _mm_set_ps1(b->m_inv));
-/*
-	__m128 i_inv = _mm_setr_ps( a->i_inv, a->i_inv,
-		                 b->i_inv, b->i_inv );
-*/
+
     __m128 i_inv = _mm_movelh_ps(_mm_set_ps1(a->i_inv), _mm_set_ps1(b->i_inv));
+*/
+    __m128 a_param = _mm_load_ps(&(a->m_inv));
+
+    __m128 b_param = _mm_load_ps(&(b->m_inv));
+
+    __m128 inv = _mm_unpacklo_ps(a_param, b_param);
+
+    __m128 m_inv = _mm_unpacklo_ps(inv, inv);
+
+    __m128 i_inv = _mm_unpackhi_ps(inv, inv);
+
+    __m128 ww = _mm_unpackhi_ps(a_param, b_param);
+
+    __m128 w = _mm_unpacklo_ps(ww, ww);
+
+    __m128 w_bias = _mm_unpackhi_ps(ww, ww);
 
     static __m128 perp = {-1, 1, -1, 1};
 
-    int i = arb->count;
+    int32_t i = arb->count;
 	struct cpContact *con = arb->contacts;
 	while(i--){
-		__m128 r = _mm_load_ps(&(con->r1));
+		__m128 r;
+		r = _mm_load_ps((float*)&(con->r1));
 		//r = _MM_LOADL_PI(r,&con->r1);
 		//r = _MM_LOADH_PI(r,&con->r2);
 
@@ -78,7 +83,7 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 		__m128 vbn_vrn = _mm_add_ps(vbvr_mul_n, _mm_shuffle_ps(vbvr_mul_n, vbvr_mul_n, _MM_SHUFFLE(2, 3, 0, 1)));
 
         //---------------------------------------------------------------------------------
-		__m128 nMass = _mm_set_ps1(con->nMass);
+		__m128 nMass = _mm_load_ps1(&(con->nMass));
 
 		//__m128 bias_bounce = _mm_movelh_ps(_mm_set_ps1(con->bias), _mm_set_ps1(-con->bounce));
 		__m128 bias_bounce;
@@ -150,11 +155,13 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
     }
     _MM_STOREL_PI(&a->v_bias, v_bias);//a->v_bias = v_bias.vect[0];
     _MM_STOREH_PI(&b->v_bias, v_bias);//b->v_bias = v_bias.vect[1];
-    a->w_bias = _MM_GET_LANE(w_bias,0);
-    b->w_bias = _MM_GET_LANE(w_bias,2);
+    //a->w_bias = _MM_GET_LANE(w_bias,0);
+    //b->w_bias = _MM_GET_LANE(w_bias,2);
     _MM_STOREL_PI(&a->v, v);//a->v = v.vect[0];
     _MM_STOREH_PI(&b->v, v);//b->v = v.vect[1];
-    a->w = _MM_GET_LANE(w,0);
-    b->w = _MM_GET_LANE(w,2);
+    //a->w = _MM_GET_LANE(w,0);
+    //b->w = _MM_GET_LANE(w,2);
+    _MM_STOREL_PI(&(a->w), _mm_unpacklo_ps(w, w_bias));
+    _MM_STOREL_PI(&(b->w), _mm_unpackhi_ps(w, w_bias));
 }
 #endif
