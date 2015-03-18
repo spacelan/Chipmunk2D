@@ -165,12 +165,15 @@ struct cpContact {
 	__attribute__((aligned(16))) cpVect r1;
 	__attribute__((aligned(8))) cpVect r2;
 
-	__attribute__((aligned(4))) cpFloat jBias, jnAcc;
-	__attribute__((aligned(4))) cpFloat bias, bounce; // TODO: look for an alternate bounce solution.
+//	__attribute__((aligned(4))) cpFloat jBias, jnAcc;
+//	__attribute__((aligned(4))) cpFloat bias, bounce; // TODO: look for an alternate bounce solution.
 
-	__attribute__((aligned(8))) cpFloat nMass, tMass;
+	__attribute__((aligned(4))) cpFloat jnAcc, jBias;
+	__attribute__((aligned(4))) cpFloat bounce, bias; // TODO: look for an alternate bounce solution.
 
-	__attribute__((aligned(16))) cpFloat jtAcc;
+	__attribute__((aligned(4))) cpFloat jtAcc, tMass;
+
+	__attribute__((aligned(16))) cpFloat nMass;
 
 	cpHashValue hash;
 };

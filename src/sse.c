@@ -8,16 +8,20 @@
 #define _MM_GET_LANE(x,y) (_mm_cvtss_f32(_mm_shuffle_ps(x,x,y)))
 void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 {
+    static __m128 perp = {-1, 1, -1, 1};
+    static __m128 ppnn = {1, 1, -1, -1};
+    static __m128 nnpp = {-1, -1, 1, 1};
     cpBody *a = arb->body_a;
     cpBody *b = arb->body_b;
-    cpFloat friction = arb->u;
+    __m128 friction = _mm_set_ss(arb->u);
 
     __m128 n;
     n = _MM_LOADL_PI(n, &arb->n);
     n = _mm_movelh_ps(n, n);
+    __m128 n_perp = _mm_mul_ps(_mm_shuffle_ps(n,n,_MM_SHUFFLE(2, 3, 0, 1)), perp);
 
     __m128 surface_vr;
-    surface_vr = _MM_LOADH_PI(_mm_setzero_ps(), &arb->surface_vr);
+    surface_vr = _MM_LOADL_PI(_mm_setzero_ps(), &arb->surface_vr);
 
     __m128 v_bias;
     v_bias = _MM_LOADL_PI(v_bias, &a->v_bias);
@@ -38,8 +42,6 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
     __m128 w = _mm_unpacklo_ps(w_b, w_b);
     __m128 w_bias = _mm_unpackhi_ps(w_b, w_b);
 
-    static __m128 perp = {-1, 1, -1, 1};
-
     int32_t i = arb->count;
     struct cpContact *con = arb->contacts;
     while(i--){
@@ -48,52 +50,54 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
 
         __m128 vb = _mm_add_ps(v_bias, _mm_mul_ps(r_perp, w_bias));
         __m128 vr = _mm_add_ps(v, _mm_mul_ps(r_perp, w));
-        __m128 vb_vr_a = _mm_movelh_ps(vb, vr);
-        __m128 vb_vr_b = _mm_movehl_ps(vr, vb);
-        __m128 vb_vr = _mm_sub_ps(vb_vr_b, vb_vr_a);
+        __m128 vr_vb_a = _mm_movelh_ps(vr, vb);
+        __m128 vr_vb_b = _mm_movehl_ps(vb, vr);
+        __m128 vr_vb = _mm_sub_ps(vr_vb_b, vr_vb_a);
         //add surface_vr to vr
-        vb_vr = _mm_add_ps(vb_vr, surface_vr);
+        vr_vb = _mm_add_ps(vr_vb, surface_vr);
 
         //vb and vr are vects
-        __m128 vbvr_mul_n = _mm_mul_ps(vb_vr, n);
-        //vb_vr dot n
-        __m128 vbn_vrn = _mm_add_ps(vbvr_mul_n, _mm_shuffle_ps(vbvr_mul_n, vbvr_mul_n, _MM_SHUFFLE(2, 3, 0, 1)));
+        __m128 vrvb_mul_n = _mm_mul_ps(vr_vb, n);
+        //vr_vb dot n
+        __m128 vrn_vbn = _mm_add_ps(vrvb_mul_n, _mm_shuffle_ps(vrvb_mul_n, vrvb_mul_n, _MM_SHUFFLE(2, 3, 0, 1)));
 
         //---------------------------------------------------------------------------------
 
-        __m128 jjbb = _mm_load_ps(&(con->jBias));
+        __m128 nnbb = _mm_load_ps(&(con->jnAcc));
 
-        __m128 jbnOld_jnOld;
-        jbnOld_jnOld = _mm_unpacklo_ps(jjbb, jjbb);
+        __m128 jnOld_jbnOld;
+        jnOld_jbnOld = _mm_unpacklo_ps(nnbb, nnbb);
 
-        __m128 bias_bounce;
-        bias_bounce = _mm_unpackhi_ps(jjbb, jjbb);
-        bias_bounce = _mm_mul_ps(bias_bounce, _mm_shuffle_ps(perp, perp, _MM_SHUFFLE(0, 2, 1, 3)));
+        __m128 bounce_bias;
+        bounce_bias = _mm_unpackhi_ps(nnbb, nnbb);
+        bounce_bias = _mm_mul_ps(bounce_bias, nnpp);
 
         __m128 nMass = _mm_load_ps1(&(con->nMass));
         //jbn and jn are scalars
-        __m128 jbn_jn;
-        jbn_jn = _mm_mul_ps(_mm_sub_ps(bias_bounce, vbn_vrn), nMass);
-        jbn_jn = _mm_max_ps(_mm_add_ps(jbn_jn, jbnOld_jnOld), _mm_setzero_ps());
+        __m128 jn_jbn;
+        jn_jbn = _mm_mul_ps(_mm_sub_ps(bounce_bias, vrn_vbn), nMass);
+        jn_jbn = _mm_add_ps(jn_jbn, jnOld_jbnOld);
+        jn_jbn = _mm_max_ps(jn_jbn, _mm_setzero_ps());
 
         __m128 jApply;
-        jApply = _mm_sub_ps(jbn_jn, jbnOld_jnOld);
+        jApply = _mm_sub_ps(jn_jbn, jnOld_jbnOld);
 
-        _MM_STOREL_PI(&(con->jBias), _mm_shuffle_ps(jbn_jn, jbn_jn, _MM_SHUFFLE(3, 2, 2, 0)));
+        _MM_STOREL_PI(&(con->jnAcc), _mm_shuffle_ps(jn_jbn, jn_jbn, _MM_SHUFFLE(3, 2, 2, 0)));
 
         //------------------------------------------------------------------------------------
         //vrt is scalar
-        __m128 _vrt = _mm_mul_ps(n, _mm_shuffle_ps(vb_vr, vb_vr, _MM_SHUFFLE(3, 2, 2, 3)));
-        _vrt = _mm_sub_ss(_mm_shuffle_ps(_vrt, _vrt, _MM_SHUFFLE(3, 2, 0, 1)), _vrt);
-        float vrt = _mm_cvtss_f32(_vrt);
-        float jtMax = friction*con->jnAcc;
-        float jt = vrt*con->tMass;
-        float jtOld = con->jtAcc;
-        con->jtAcc = cpfclamp(jtOld+jt, -jtMax, jtMax);
+        __m128 vrt = _mm_mul_ps(vr_vb, n_perp);
+        vrt = _mm_add_ps(vrt, _mm_shuffle_ps(vrt, vrt, _MM_SHUFFLE(2, 3, 0, 1)));
+        __m128 jtMax = _mm_mul_ss(friction, jn_jbn);
+        __m128 jtOld;
+        jtOld = _MM_LOADL_PI(jtOld, &(con->jtAcc));
+        __m128 jt = _mm_mul_ss(vrt, _mm_shuffle_ps(jtOld, jtOld, 1));
+        __m128 jtAcc = _mm_min_ss(_mm_max_ss(_mm_sub_ss(jtOld, jt), _mm_mul_ss(jtMax, nnpp)), jtMax);
+        _mm_store_ss(&(con->jtAcc), jtAcc);
 
         //------------------------------------------------------------------------------------
         //j >> - - + +
-        __m128 j = _mm_mul_ps(n, _mm_mul_ps(_mm_movelh_ps(jApply,jApply),_mm_shuffle_ps(perp,perp,_MM_SHUFFLE(3, 1, 2, 0))));
+        __m128 j = _mm_mul_ps(n, _mm_mul_ps(_mm_movehl_ps(jApply,jApply),nnpp));
 
         v_bias = _mm_add_ps(v_bias, _mm_mul_ps(j, m_inv));
 
@@ -102,15 +106,16 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
         __m128 r_cross_j = _mm_add_ps(rp_mul_j, _mm_shuffle_ps(rp_mul_j, rp_mul_j, _MM_SHUFFLE(2, 3, 0, 1)));
 
         w_bias = _mm_add_ps(w_bias, _mm_mul_ps(i_inv, r_cross_j));
-        //------------------------------------------------------------------------------------
-        __m128 rot_para = _mm_setr_ps( _MM_GET_LANE(jApply,2), -(con->jtAcc - jtOld),
-                            con->jtAcc - jtOld, _MM_GET_LANE(jApply,2) );
 
-        __m128 n_mul_para = _mm_mul_ps(n, rot_para);
+        //-----------------------------------------------------------------------------------
+        __m128 rot_para = _mm_sub_ss(jtAcc, jtOld);
+        rot_para = _mm_movelh_ps(rot_para, jApply);
+        rot_para = _mm_shuffle_ps(rot_para, rot_para, _MM_SHUFFLE(0, 2, 2, 0));
+        rot_para = _mm_mul_ss(rot_para, nnpp);
 
-        __m128 k = _mm_add_ps(n_mul_para, _mm_shuffle_ps(n_mul_para, n_mul_para, _MM_SHUFFLE(2, 3, 0, 1)));
+        __m128 n_mul_para = _mm_mul_ps(n_perp, rot_para);
 
-        k = _mm_mul_ps(k, perp);
+        __m128 k = _mm_sub_ps(n_mul_para, _mm_shuffle_ps(n_mul_para, n_mul_para, _MM_SHUFFLE(2, 3, 0, 1)));
 
         k = _mm_shuffle_ps(k, k, _MM_SHUFFLE(3, 1, 2, 0));
 
@@ -123,6 +128,7 @@ void cpArbiterApplyImpulse_SSE(cpArbiter *arb)
         w = _mm_add_ps(w, _mm_mul_ps(i_inv, r_cross_k));
         con++;
     }
+
     _MM_STOREL_PI(&a->v_bias, v_bias);
     _MM_STOREH_PI(&b->v_bias, v_bias);
 
